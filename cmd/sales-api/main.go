@@ -2,17 +2,17 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"flag"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
+	"github.com/wgarcia4190/garagesale/cmd/sales-api/internal/handlers"
+	"github.com/wgarcia4190/garagesale/internal/platform/database"
+	"github.com/wgarcia4190/garagesale/internal/schema"
 )
 
 func main() {
@@ -23,18 +23,36 @@ func main() {
 
 	// =========================================================================
 	// Setup Dependencies
-	db, err := openDB()
+	db, err := database.Open()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	defer db.Close()
 
+	flag.Parse()
+	switch flag.Arg(0) {
+	case "migrate":
+		if err := schema.Migrate(db); err != nil {
+			log.Fatal("applying migrations", err)
+		}
+		log.Println("Migrations complete")
+		return
+
+	case "seed":
+		if err := schema.Seed(db); err != nil {
+			log.Fatal("applying seed data", err)
+		}
+		log.Println("Seed data inserted")
+		return
+	}
+
 	// =========================================================================
 	// Start API Service
+	ps := handlers.Product{DB: db}
 	api := http.Server{
 		Addr:         "localhost:8000",
-		Handler:      http.HandlerFunc(GetListProducts),
+		Handler:      http.HandlerFunc(ps.GetListProducts),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
 	}
@@ -87,48 +105,3 @@ func main() {
 	}
 }
 
-func openDB() (*sqlx.DB, error) {
-	q := url.Values{}
-	q.Set("sslmode", "disable")
-	q.Set("timezone", "utc")
-
-	u := url.URL{
-		Scheme:   "postgres",
-		User:     url.UserPassword("postgres", "postgres"),
-		Host:     "localhost",
-		Path:     "postgres",
-		RawQuery: q.Encode(),
-	}
-
-	return sqlx.Open("postgres", u.String())
-}
-
-// Product is something we sell.
-type Product struct {
-	Name     string `json:"name"`
-	Cost     int    `json:"cost"`
-	Quantity int    `json:"quantity"`
-}
-
-// GetListProducts gives all products as list.
-func GetListProducts(writer http.ResponseWriter, request *http.Request) {
-	list := []Product{
-		{Name: "Comic Books", Cost: 75, Quantity: 50},
-		{Name: "MCDonald's Toys", Cost: 25, Quantity: 120},
-	}
-
-	data, err := json.Marshal(list)
-	if err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		log.Println("Error marshalling", err)
-
-		return
-	}
-
-	writer.Header().Set("content-type", "application/json; charset=utf-8")
-	writer.WriteHeader(http.StatusOK)
-
-	if _, err := writer.Write(data); err != nil {
-		log.Println("Error writing", err)
-	}
-}
