@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"fmt"
+	"encoding/json"
 	"log"
-	"math/big"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,9 +21,9 @@ func main() {
 	// Start API Service
 	api := http.Server{
 		Addr:         "localhost:8000",
-		Handler:      http.HandlerFunc(Echo),
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 5 * time.Second,
+		Handler:      http.HandlerFunc(GetListProducts),
+		ReadTimeout:  5 * time.Second, //nolint:gomnd
+		WriteTimeout: 5 * time.Second, //nolint:gomnd
 	}
 
 	// Make a channel to listen for errors coming from the listener. Use a
@@ -76,24 +74,32 @@ func main() {
 	}
 }
 
-// Echo is a basic HTTP Handler.
-// If you open localhost:8000 in your browser, you may notice
-// double request being made. This happens because the browser
-// sends a request in the background for a website favicon.
-func Echo(writer http.ResponseWriter, request *http.Request) {
-	// Print a random number at the beginning and end of each request.
-	n, err := rand.Int(rand.Reader, big.NewInt(1000))
+// Product is something we sell.
+type Product struct {
+	Name     string `json:"name"`
+	Cost     int    `json:"cost"`
+	Quantity int    `json:"quantity"`
+}
 
+// GetListProducts gives all products as list.
+func GetListProducts(writer http.ResponseWriter, request *http.Request) {
+	list := []Product{
+		{Name: "Comic Books", Cost: 75, Quantity: 50},
+		{Name: "MCDonald's Toys", Cost: 25, Quantity: 120},
+	}
+
+	data, err := json.Marshal(list)
 	if err != nil {
-		fmt.Println("error:", err)
+		writer.WriteHeader(http.StatusInternalServerError)
+		log.Println("Error marshalling", err)
+
 		return
 	}
 
-	log.Println("start", n)
-	defer log.Println("end", n)
+	writer.Header().Set("content-type", "application/json; charset=utf-8")
+	writer.WriteHeader(http.StatusOK)
 
-	// Simulate a long-running request.
-	time.Sleep(3 * time.Second)
-
-	_, _ = fmt.Fprintf(writer, "You asked to %s %s\n", request.Method, request.URL.Path)
+	if _, err := writer.Write(data); err != nil {
+		log.Println("Error writing", err)
+	}
 }
