@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -11,19 +12,63 @@ import (
 	"time"
 
 	"github.com/wgarcia4190/garagesale/cmd/sales-api/internal/handlers"
+	"github.com/wgarcia4190/garagesale/internal/platform/conf"
 	"github.com/wgarcia4190/garagesale/internal/platform/database"
 	"github.com/wgarcia4190/garagesale/internal/schema"
 )
 
 func main() {
 	// =========================================================================
+	// Configuration
+
+	var cfg struct {
+		Web struct {
+			Address         string        `conf:"default:localhost:8000"`
+			ReadTimeout     time.Duration `conf:"default:5s"`
+			WriteTimeout    time.Duration `conf:"default:5s"`
+			ShutdownTimeout time.Duration `conf:"default:5s"`
+		}
+		DB struct {
+			User       string `conf:"default:postgres"`
+			Password   string `conf:"default:postgres,noprint"`
+			Host       string `conf:"default:localhost"`
+			Name       string `conf:"default:postgres"`
+			DisableTLS bool   `conf:"default:true"`
+		}
+	}
+
+	if err := conf.Parse(os.Args[1:], "SALES", &cfg); err != nil {
+		if err == conf.ErrHelpWanted {
+			usage, err := conf.Usage("SALES", &cfg)
+			if err != nil {
+				log.Fatalf("error: generating config usage : %v", err)
+			}
+			fmt.Println(usage)
+			return
+		}
+		log.Fatalf("error: parsing config %s", err)
+	}
+
+	// =========================================================================
 	// App Starting
 	log.Printf("main: Started")
 	defer log.Println("main: Completed")
 
+	out, err := conf.String(&cfg)
+	if err != nil {
+		log.Fatalf("error : generating config for output : %v", err)
+	}
+	log.Printf("main : Config :\n%v\n", out)
+
 	// =========================================================================
 	// Setup Dependencies
-	db, err := database.Open()
+	db, err := database.Open(database.Config{
+		Host:       cfg.DB.Host,
+		Name:       cfg.DB.Name,
+		User:       cfg.DB.User,
+		Password:   cfg.DB.Password,
+		DisableTLS: cfg.DB.DisableTLS,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -51,10 +96,10 @@ func main() {
 	// Start API Service
 	ps := handlers.Product{DB: db}
 	api := http.Server{
-		Addr:         "localhost:8000",
+		Addr:         cfg.Web.Address,
 		Handler:      http.HandlerFunc(ps.GetListProducts),
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 5 * time.Second,
+		ReadTimeout:  cfg.Web.ReadTimeout,
+		WriteTimeout: cfg.Web.WriteTimeout,
 	}
 
 	// Make a channel to listen for errors coming from the listener. Use a
@@ -85,7 +130,7 @@ func main() {
 		log.Println("main: Start shutdown")
 
 		// Give outstanding requests a deadline for completion.
-		const timeout = 5 * time.Second
+		timeout := cfg.Web.ShutdownTimeout
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 
 		defer cancel()
@@ -104,4 +149,3 @@ func main() {
 		}
 	}
 }
-
