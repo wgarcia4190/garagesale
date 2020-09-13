@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,13 +10,21 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/wgarcia4190/garagesale/cmd/sales-api/internal/handlers"
 	"github.com/wgarcia4190/garagesale/internal/platform/conf"
 	"github.com/wgarcia4190/garagesale/internal/platform/database"
-	"github.com/wgarcia4190/garagesale/internal/schema"
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
+	log := log.New(os.Stdout, "SALES : ", log.LstdFlags)
+
 	// =========================================================================
 	// Configuration
 
@@ -41,12 +48,12 @@ func main() {
 		if err == conf.ErrHelpWanted {
 			usage, err := conf.Usage("SALES", &cfg)
 			if err != nil {
-				log.Fatalf("error: generating config usage : %v", err)
+				return errors.Wrap(err, "generating config usage")
 			}
 			fmt.Println(usage)
-			return
+			return nil
 		}
-		log.Fatalf("error: parsing config %s", err)
+		return errors.Wrap(err, "parsing config")
 	}
 
 	// =========================================================================
@@ -56,7 +63,7 @@ func main() {
 
 	out, err := conf.String(&cfg)
 	if err != nil {
-		log.Fatalf("error : generating config for output : %v", err)
+		return errors.Wrap(err, "generating config for output")
 	}
 	log.Printf("main : Config :\n%v\n", out)
 
@@ -70,34 +77,16 @@ func main() {
 		DisableTLS: cfg.DB.DisableTLS,
 	})
 	if err != nil {
-		log.Fatal(err)
+		return errors.Wrap(err, "opening DB")
 	}
 
 	defer db.Close()
 
-	flag.Parse()
-	switch flag.Arg(0) {
-	case "migrate":
-		if err := schema.Migrate(db); err != nil {
-			log.Fatal("applying migrations", err)
-		}
-		log.Println("Migrations complete")
-		return
-
-	case "seed":
-		if err := schema.Seed(db); err != nil {
-			log.Fatal("applying seed data", err)
-		}
-		log.Println("Seed data inserted")
-		return
-	}
-
 	// =========================================================================
 	// Start API Service
-	ps := handlers.Product{DB: db}
 	api := http.Server{
 		Addr:         cfg.Web.Address,
-		Handler:      http.HandlerFunc(ps.GetListProducts),
+		Handler:      handlers.API(log, db),
 		ReadTimeout:  cfg.Web.ReadTimeout,
 		WriteTimeout: cfg.Web.WriteTimeout,
 	}
@@ -123,8 +112,7 @@ func main() {
 	// Blocking main and waiting for shutdown.
 	select {
 	case err := <-serverError:
-		log.Printf("error: listening and serving: %s", err)
-		return
+		return errors.Wrap(err, "Listening and serving")
 
 	case <-shutdown:
 		log.Println("main: Start shutdown")
@@ -144,8 +132,9 @@ func main() {
 		}
 
 		if err != nil {
-			log.Printf("main : could not stop server gracefully : %v", err)
-			return
+			return errors.Wrap(err, "graceful shutdown")
 		}
 	}
+
+	return nil
 }
