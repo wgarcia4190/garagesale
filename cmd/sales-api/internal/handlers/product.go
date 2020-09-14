@@ -19,8 +19,8 @@ type Product struct {
 }
 
 // GetListProducts gives all products as list.
-func (p *Product) GetListProducts(writer http.ResponseWriter, _ *http.Request) error {
-	list, err := product.List(p.DB)
+func (p *Product) GetListProducts(writer http.ResponseWriter, request *http.Request) error {
+	list, err := product.List(request.Context(), p.DB)
 
 	if err != nil {
 		return err
@@ -32,7 +32,7 @@ func (p *Product) GetListProducts(writer http.ResponseWriter, _ *http.Request) e
 // RetrieveProduct gives a single Product.
 func (p *Product) RetrieveProduct(writer http.ResponseWriter, request *http.Request) error {
 	id := chi.URLParam(request, "id")
-	prod, err := product.Retrieve(p.DB, id)
+	prod, err := product.Retrieve(request.Context(), p.DB, id)
 
 	if err != nil {
 		switch err {
@@ -55,7 +55,7 @@ func (p *Product) CreateProduct(writer http.ResponseWriter, request *http.Reques
 		return err
 	}
 
-	prod, err := product.Create(p.DB, np, time.Now())
+	prod, err := product.Create(request.Context(), p.DB, np, time.Now())
 	if err != nil {
 		return err
 	}

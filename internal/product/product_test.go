@@ -1,6 +1,7 @@
 package product_test
 
 import (
+	"context"
 	"github.com/wgarcia4190/garagesale/internal/schema"
 	"testing"
 	"time"
@@ -14,6 +15,8 @@ func TestProducts(t *testing.T) {
 	db, cleanup := databasetest.Setup(t)
 	defer cleanup()
 
+	ctx := context.Background()
+
 	np := product.NewProduct{
 		Name:     "Comic Books",
 		Cost:     10,
@@ -22,12 +25,12 @@ func TestProducts(t *testing.T) {
 
 	now := time.Date(2020, time.September, 1, 0, 0, 0, 0, time.UTC)
 
-	p, err := product.Create(db, np, now)
+	p, err := product.Create(ctx, db, np, now)
 	if err != nil {
 		t.Fatalf("could not create product: %v", err)
 	}
 
-	saved, err := product.Retrieve(db, p.ID)
+	saved, err := product.Retrieve(ctx, db, p.ID)
 	if err != nil {
 		t.Fatalf("could not retrieve product: %v", err)
 	}
@@ -41,11 +44,13 @@ func TestList(t *testing.T) {
 	db, cleanup := databasetest.Setup(t)
 	defer cleanup()
 
+	ctx := context.Background()
+
 	if err := schema.Seed(db); err != nil {
 		t.Fatal(err)
 	}
 
-	ps, err := product.List(db)
+	ps, err := product.List(ctx, db)
 	if err != nil {
 		t.Fatalf("listing products: %v", err)
 	}
