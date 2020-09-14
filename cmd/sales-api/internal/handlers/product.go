@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"github.com/pkg/errors"
 	"log"
 	"net/http"
 	"time"
@@ -13,60 +14,51 @@ import (
 
 // Product has handler methods for dealing with Products.
 type Product struct {
-	DB *sqlx.DB
+	DB  *sqlx.DB
 	Log *log.Logger
 }
 
 // GetListProducts gives all products as list.
-func (p *Product) GetListProducts(writer http.ResponseWriter, _ *http.Request) {
+func (p *Product) GetListProducts(writer http.ResponseWriter, _ *http.Request) error {
 	list, err := product.List(p.DB)
 
 	if err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		p.Log.Println("error querying db", err)
-		return
+		return err
 	}
 
-	if err := web.Respond(writer, list, http.StatusOK); err != nil {
-		p.Log.Println("Error writing", err)
-		return
-	}
+	return web.Respond(writer, list, http.StatusOK)
 }
 
 // RetrieveProduct gives a single Product.
-func (p *Product) RetrieveProduct(writer http.ResponseWriter, request *http.Request) {
+func (p *Product) RetrieveProduct(writer http.ResponseWriter, request *http.Request) error {
 	id := chi.URLParam(request, "id")
 	prod, err := product.Retrieve(p.DB, id)
 
 	if err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		p.Log.Println("error querying db", err)
-		return
+		switch err {
+		case product.ErrNotFound:
+			return web.NewRequestError(err, http.StatusNotFound)
+		case product.ErrInvalidID:
+			return web.NewRequestError(err, http.StatusBadRequest)
+		default:
+			return errors.Wrapf(err, "looking for product %q", id)
+		}
 	}
 
-	if err := web.Respond(writer, prod, http.StatusOK); err != nil {
-		p.Log.Println("Error writing", err)
-		return
-	}
+	return web.Respond(writer, prod, http.StatusOK)
 }
 
 // CreateProduct decode a JSON document from a POST request and create a new Product.
-func (p *Product) CreateProduct(writer http.ResponseWriter, request *http.Request) {
+func (p *Product) CreateProduct(writer http.ResponseWriter, request *http.Request) error {
 	var np product.NewProduct
 	if err := web.Decode(request, &np); err != nil {
-		writer.WriteHeader(http.StatusBadRequest)
-		p.Log.Println("error writing", err)
+		return err
 	}
 
 	prod, err := product.Create(p.DB, np, time.Now())
 	if err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		p.Log.Println("error querying db", err)
-		return
+		return err
 	}
 
-	if err := web.Respond(writer, prod, http.StatusCreated); err != nil {
-		p.Log.Println("Error writing", err)
-		return
-	}
+	return web.Respond(writer, prod, http.StatusCreated)
 }

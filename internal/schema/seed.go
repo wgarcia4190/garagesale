@@ -41,4 +41,3 @@ func Seed(db *sqlx.DB) error {
 
 	return tx.Commit()
 }
-

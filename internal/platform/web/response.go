@@ -6,8 +6,7 @@ import (
 	"net/http"
 )
 
-
-// Respond marshalls a value to JSON and sends it to the client.
+// Respond marshals a value to JSON and sends it to the client.
 func Respond(writer http.ResponseWriter, val interface{}, statusCode int) error {
 	data, err := json.Marshal(val)
 	if err != nil {
@@ -22,4 +21,21 @@ func Respond(writer http.ResponseWriter, val interface{}, statusCode int) error 
 	}
 
 	return nil
+}
+
+// RespondError knows how to handle errors going out to the client.
+func RespondError(writer http.ResponseWriter, err error) error {
+	if webErr, ok := err.(*Error); ok {
+		resp := ErrorResponse{
+			Error: webErr.Err.Error(),
+		}
+
+		return Respond(writer, resp, webErr.Status)
+	}
+
+	resp := ErrorResponse{
+		Error: http.StatusText(http.StatusInternalServerError),
+	}
+
+	return Respond(writer, resp, http.StatusInternalServerError)
 }

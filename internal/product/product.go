@@ -1,11 +1,17 @@
 package product
 
 import (
+	"database/sql"
 	"github.com/pkg/errors"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+)
+
+var (
+	ErrNotFound  = errors.New("Product not found")
+	ErrInvalidID = errors.New("id provided was not a valid UUID")
 )
 
 // List return all known Products.
@@ -21,14 +27,21 @@ func List(db *sqlx.DB) ([]Product, error) {
 	return list, nil
 }
 
-
 // Retrieve returns a single Product.
 func Retrieve(db *sqlx.DB, id string) (*Product, error) {
+
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, ErrInvalidID
+	}
+
 	var p Product
 
 	const q = `SELECT product_id, name, cost, quantity, date_created, date_updated FROM products WHERE product_id = $1`
 
 	if err := db.Get(&p, q, id); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 
@@ -38,12 +51,12 @@ func Retrieve(db *sqlx.DB, id string) (*Product, error) {
 // Create makes a new Product.
 func Create(db *sqlx.DB, np NewProduct, now time.Time) (*Product, error) {
 	p := Product{
-		ID: uuid.New().String(),
-		Name: np.Name,
-		Cost: np.Cost,
-		Quantity: np.Quantity,
-		DateCreated: now,
-		DateUpdated: now,
+		ID:          uuid.New().String(),
+		Name:        np.Name,
+		Cost:        np.Cost,
+		Quantity:    np.Quantity,
+		DateCreated: now.UTC(),
+		DateUpdated: now.UTC(),
 	}
 
 	const q = `INSERT INTO products

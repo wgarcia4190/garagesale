@@ -14,7 +14,7 @@ type Product struct {
 
 // NewProduct is what we require from clients to make a new Product.
 type NewProduct struct {
-	Name        string    `json:"name"`
-	Cost        int       `json:"cost"`
-	Quantity    int       `json:"quantity"`
+	Name     string `json:"name"`
+	Cost     int    `json:"cost"`
+	Quantity int    `json:"quantity"`
 }
