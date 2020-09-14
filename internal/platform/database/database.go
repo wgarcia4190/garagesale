@@ -21,7 +21,7 @@ func Open(config Config) (*sqlx.DB, error) {
 	q := url.Values{}
 	q.Set("sslmode", "require")
 
-	if config.DisableTLS {
+	if !config.DisableTLS {
 		q.Set("sslmode", "disable")
 	}
 

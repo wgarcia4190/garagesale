@@ -40,7 +40,7 @@ func run() error {
 			Password   string `conf:"default:postgres,noprint"`
 			Host       string `conf:"default:localhost"`
 			Name       string `conf:"default:postgres"`
-			DisableTLS bool   `conf:"default:true"`
+			DisableTLS bool   `conf:"default:false"`
 		}
 	}
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/pkg/errors"
 	"log"
 	"os"
 
@@ -11,6 +12,13 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Printf("error: shutting down: %s", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 
 	// =========================================================================
 	// Configuration
@@ -30,12 +38,12 @@ func main() {
 		if err == conf.ErrHelpWanted {
 			usage, err := conf.Usage("SALES", &cfg)
 			if err != nil {
-				log.Fatalf("main : generating usage : %v", err)
+				return errors.Wrap(err, "generating usage")
 			}
 			fmt.Println(usage)
-			return
+			return nil
 		}
-		log.Fatalf("error: parsing config: %s", err)
+		return errors.Wrap(err, "error: parsing config")
 	}
 
 	// Initialize dependencies.
@@ -47,25 +55,23 @@ func main() {
 		DisableTLS: cfg.DB.DisableTLS,
 	})
 	if err != nil {
-		log.Fatalf("error: connecting to db: %s", err)
+		return errors.Wrap(err, "connecting to db")
 	}
 	defer db.Close()
 
 	switch cfg.Args.Num(0) {
 	case "migrate":
 		if err := schema.Migrate(db); err != nil {
-			log.Println("error applying migrations", err)
-			os.Exit(1)
+			return errors.Wrap(err, "applying migrations")
 		}
 		fmt.Println("Migrations complete")
-		return
 
 	case "seed":
 		if err := schema.Seed(db); err != nil {
-			log.Println("error seeding database", err)
-			os.Exit(1)
+			return errors.Wrap(err, "seeding database")
 		}
 		fmt.Println("Seed data complete")
-		return
 	}
+
+	return nil
 }

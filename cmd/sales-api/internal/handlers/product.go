@@ -62,3 +62,33 @@ func (p *Product) CreateProduct(writer http.ResponseWriter, request *http.Reques
 
 	return web.Respond(writer, prod, http.StatusCreated)
 }
+
+// AddSale creates a new Sale for a particular product. It looks for a JSON
+// object in the request body. The full model is returned to the caller.
+func (p *Product) AddSale(writer http.ResponseWriter, request *http.Request) error {
+	var ns product.NewSale
+	if err := web.Decode(request, &ns); err != nil {
+		return errors.Wrap(err, "decoding new sale")
+	}
+
+	productID := chi.URLParam(request, "id")
+
+	sale, err := product.AddSale(request.Context(), p.DB, ns, productID, time.Now())
+	if err != nil {
+		return errors.Wrap(err, "adding new sale")
+	}
+
+	return web.Respond(writer, sale, http.StatusCreated)
+}
+
+// ListSales get all sales for a particular product.
+func (p *Product) ListSales(writer http.ResponseWriter, request *http.Request) error {
+	id := chi.URLParam(request, "id")
+
+	list, err := product.ListSales(request.Context(), p.DB, id)
+	if err != nil {
+		return errors.Wrap(err, "getting sales list")
+	}
+
+	return web.Respond(writer, list, http.StatusOK)
+}
