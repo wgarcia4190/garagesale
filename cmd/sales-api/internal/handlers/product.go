@@ -26,7 +26,7 @@ func (p *Product) GetListProducts(writer http.ResponseWriter, request *http.Requ
 		return err
 	}
 
-	return web.Respond(writer, list, http.StatusOK)
+	return web.Respond(request.Context(), writer, list, http.StatusOK)
 }
 
 // RetrieveProduct gives a single Product.
@@ -45,7 +45,7 @@ func (p *Product) RetrieveProduct(writer http.ResponseWriter, request *http.Requ
 		}
 	}
 
-	return web.Respond(writer, prod, http.StatusOK)
+	return web.Respond(request.Context(), writer, prod, http.StatusOK)
 }
 
 // CreateProduct decode a JSON document from a POST request and create a new Product.
@@ -60,7 +60,47 @@ func (p *Product) CreateProduct(writer http.ResponseWriter, request *http.Reques
 		return err
 	}
 
-	return web.Respond(writer, prod, http.StatusCreated)
+	return web.Respond(request.Context(), writer, prod, http.StatusCreated)
+}
+
+// UpdateProduct decodes the body of a request to update an existing product. The ID
+// of the product is part of the request URL
+func (p *Product) UpdateProduct(writer http.ResponseWriter, request *http.Request) error {
+	id := chi.URLParam(request, "id")
+
+	var update product.UpdateProduct
+	if err := web.Decode(request, &update); err != nil {
+		return errors.Wrap(err, "decoding product update")
+	}
+
+	if err := product.Update(request.Context(), p.DB, id, update, time.Now()); err != nil {
+		switch err {
+		case product.ErrNotFound:
+			return web.NewRequestError(err, http.StatusNotFound)
+		case product.ErrInvalidID:
+			return web.NewRequestError(err, http.StatusBadRequest)
+		default:
+			return errors.Wrapf(err, "updating product %q", id)
+		}
+	}
+
+	return web.Respond(request.Context(), writer, nil, http.StatusNoContent)
+}
+
+// DeleteProduct removes a single product identified by an ID in the request URL.
+func (p *Product) DeleteProduct(writer http.ResponseWriter, request *http.Request) error {
+	id := chi.URLParam(request, "id")
+
+	if err := product.Delete(request.Context(), p.DB, id); err != nil {
+		switch err {
+		case product.ErrInvalidID:
+			return web.NewRequestError(err, http.StatusBadRequest)
+		default:
+			return errors.Wrapf(err, "deleting product %q", id)
+		}
+	}
+
+	return web.Respond(request.Context(), writer, nil, http.StatusNoContent)
 }
 
 // AddSale creates a new Sale for a particular product. It looks for a JSON
@@ -78,11 +118,11 @@ func (p *Product) AddSale(writer http.ResponseWriter, request *http.Request) err
 		return errors.Wrap(err, "adding new sale")
 	}
 
-	return web.Respond(writer, sale, http.StatusCreated)
+	return web.Respond(request.Context(), writer, sale, http.StatusCreated)
 }
 
 // ListSales get all sales for a particular product.
-func (p *Product) ListSales(writer http.ResponseWriter, request *http.Request) error {
+func (p *Product) GetListSales(writer http.ResponseWriter, request *http.Request) error {
 	id := chi.URLParam(request, "id")
 
 	list, err := product.ListSales(request.Context(), p.DB, id)
@@ -90,5 +130,5 @@ func (p *Product) ListSales(writer http.ResponseWriter, request *http.Request) e
 		return errors.Wrap(err, "getting sales list")
 	}
 
-	return web.Respond(writer, list, http.StatusOK)
+	return web.Respond(request.Context(), writer, list, http.StatusOK)
 }
