@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"expvar"
 	"net/http"
 	"runtime"
@@ -23,8 +24,8 @@ func Metrics() web.Middleware {
 	// This is the actual middleware function to be executed.
 	f := func(before web.Handler) web.Handler {
 		// Wrap this handler around the next one provided.
-		h := func(writer http.ResponseWriter, request *http.Request) error {
-			err := before(writer, request)
+		h := func(ctx context.Context, writer http.ResponseWriter, request *http.Request) error {
+			err := before(ctx, writer, request)
 
 			// increase the request counter
 			m.req.Add(1)

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/jmoiron/sqlx"
@@ -14,21 +15,21 @@ type Check struct {
 }
 
 // Health responds with a 200 OK if the service is healthy and ready for traffic
-func (c *Check) Health(writer http.ResponseWriter, request *http.Request) error {
+func (c *Check) Health(ctx context.Context, writer http.ResponseWriter, request *http.Request) error {
 
 	var health struct {
 		Status string `json:"status"`
 	}
 
-	if err := database.StatusCheck(request.Context(), c.DB); err != nil {
+	if err := database.StatusCheck(ctx, c.DB); err != nil {
 
 		// If the database is not ready we will tell the client and use a 500
 		// status. Do not respond by just returning an error because further up in
 		// the call stack will interpret that as an unhandled error.
 		health.Status = "db not ready"
-		return web.Respond(request.Context(), writer, health, http.StatusInternalServerError)
+		return web.Respond(ctx, writer, health, http.StatusInternalServerError)
 	}
 
 	health.Status = "ok"
-	return web.Respond(request.Context(), writer, health, http.StatusOK)
+	return web.Respond(ctx, writer, health, http.StatusOK)
 }

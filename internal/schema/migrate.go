@@ -10,7 +10,7 @@ import (
 // production.
 //
 // Including the queries directly in this file has the same pros/cons mentioned
-// in seed.go
+// in seeds.go
 
 var migrations = []darwin.Migration{
 	{
@@ -43,12 +43,31 @@ CREATE TABLE sales (
 	FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
 );`,
 	},
+	{
+		Version:     3,
+		Description: "Add users",
+		Script: `
+CREATE TABLE users (
+	user_id       UUID,
+	name          TEXT,
+	email         TEXT UNIQUE,
+	roles         TEXT[],
+	password_hash TEXT,
+
+	date_created TIMESTAMP,
+	date_updated TIMESTAMP,
+
+	PRIMARY KEY (user_id)
+);`,
+	},
 }
 
 // Migrate attempts to bring the schema for db up to date with the migrations
 // defined in this package.
 func Migrate(db *sqlx.DB) error {
+
 	driver := darwin.NewGenericDriver(db.DB, darwin.PostgresDialect{})
+
 	d := darwin.New(driver, migrations, nil)
 
 	return d.Migrate()

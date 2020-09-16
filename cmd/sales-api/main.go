@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/rsa"
 	_ "expvar" // Register the /debug/vars handlers
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	_ "net/http/pprof" //nolint:gosec Register the /debug/pprof handlers
@@ -12,8 +14,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/pkg/errors"
 	"github.com/wgarcia4190/garagesale/cmd/sales-api/internal/handlers"
+	"github.com/wgarcia4190/garagesale/internal/platform/auth"
 	"github.com/wgarcia4190/garagesale/internal/platform/conf"
 	"github.com/wgarcia4190/garagesale/internal/platform/database"
 )
@@ -45,6 +49,11 @@ func run() error {
 			Name       string `conf:"default:postgres"`
 			DisableTLS bool   `conf:"default:false"`
 		}
+		Auth struct {
+			KeyID          string `conf:"default:1"`
+			PrivateKeyFile string `conf:"default:private.pem"`
+			Algorithm      string `conf:"default:RS256"`
+		}
 	}
 
 	if err := conf.Parse(os.Args[1:], "SALES", &cfg); err != nil {
@@ -71,7 +80,11 @@ func run() error {
 	log.Printf("main : Config :\n%v\n", out)
 
 	// =========================================================================
-	// Setup Dependencies
+	// Initialize authentication support
+	authenticator, err := createAuth(cfg.Auth.PrivateKeyFile, cfg.Auth.KeyID, cfg.Auth.Algorithm)
+
+	// =========================================================================
+	// Start Database
 	db, err := database.Open(database.Config{
 		Host:       cfg.DB.Host,
 		Name:       cfg.DB.Name,
@@ -100,7 +113,7 @@ func run() error {
 	// Start API Service
 	api := http.Server{
 		Addr:         cfg.Web.Address,
-		Handler:      handlers.API(log, db),
+		Handler:      handlers.API(log, db, authenticator),
 		ReadTimeout:  cfg.Web.ReadTimeout,
 		WriteTimeout: cfg.Web.WriteTimeout,
 	}
@@ -151,4 +164,20 @@ func run() error {
 	}
 
 	return nil
+}
+
+func createAuth(privateKeyFile, keyID, algorithm string) (*auth.Authenticator, error) {
+	keyContents, err := ioutil.ReadFile(privateKeyFile)
+	if err != nil {
+		return nil, errors.Wrap(err, "reading auth private key")
+	}
+
+	key, err := jwt.ParseRSAPrivateKeyFromPEM(keyContents)
+	if err != nil {
+		return nil, errors.Wrap(err, "parsing auth private key")
+	}
+
+	public := auth.NewSimpleKeyLookupFunc(keyID, key.Public().(*rsa.PublicKey))
+
+	return auth.NewAuthenticator(key, keyID, algorithm, public)
 }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"github.com/wgarcia4190/garagesale/internal/platform/auth"
 	"log"
 	"net/http"
 
@@ -10,11 +11,14 @@ import (
 )
 
 // API constructs a handler that knows about all API routes.
-func API(logger *log.Logger, db *sqlx.DB) http.Handler {
+func API(logger *log.Logger, db *sqlx.DB, authenticator *auth.Authenticator) http.Handler {
 	app := web.NewApp(logger, middleware.Logger(logger), middleware.Errors(logger), middleware.Metrics())
 
 	c := Check{DB: db}
 	app.Handler(http.MethodGet, "/v1/health", c.Health)
+
+	u := Users{DB: db, authenticator: authenticator}
+	app.Handler(http.MethodGet, "/v1/users/token", u.Token)
 
 	p := Product{DB: db, Log: logger}
 
