@@ -7,6 +7,7 @@ import (
 	"runtime"
 
 	"github.com/wgarcia4190/garagesale/internal/platform/web"
+	"go.opencensus.io/trace"
 )
 
 // m contains the global program counters for the application.
@@ -25,6 +26,9 @@ func Metrics() web.Middleware {
 	f := func(before web.Handler) web.Handler {
 		// Wrap this handler around the next one provided.
 		h := func(ctx context.Context, writer http.ResponseWriter, request *http.Request) error {
+			ctx, span := trace.StartSpan(ctx, "internal.mid.metrics")
+			defer span.End()
+
 			err := before(ctx, writer, request)
 
 			// increase the request counter

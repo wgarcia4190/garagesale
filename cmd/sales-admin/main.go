@@ -173,7 +173,7 @@ func keygen(path string) error {
 	defer file.Close()
 
 	block := pem.Block{
-		Type: "RSA PRIVATE KEY",
+		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(key),
 	}
 

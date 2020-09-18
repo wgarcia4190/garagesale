@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"github.com/pkg/errors"
+	"github.com/wgarcia4190/garagesale/internal/platform/auth"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,6 +14,7 @@ import (
 var (
 	ErrNotFound  = errors.New("Product not found")
 	ErrInvalidID = errors.New("id provided was not a valid UUID")
+	ErrForbidden = errors.New("Attempted action is not allowed")
 )
 
 // List return all known Products.
@@ -65,21 +67,22 @@ func Retrieve(ctx context.Context, db *sqlx.DB, id string) (*Product, error) {
 }
 
 // Create makes a new Product.
-func Create(ctx context.Context, db *sqlx.DB, np NewProduct, now time.Time) (*Product, error) {
+func Create(ctx context.Context, db *sqlx.DB, user auth.Claims, np NewProduct, now time.Time) (*Product, error) {
 	p := Product{
 		ID:          uuid.New().String(),
 		Name:        np.Name,
 		Cost:        np.Cost,
 		Quantity:    np.Quantity,
+		UserID:      user.Subject,
 		DateCreated: now.UTC(),
 		DateUpdated: now.UTC(),
 	}
 
 	const q = `INSERT INTO products
-	(product_id, name, cost, quantity, date_created, date_updated)
-	VALUES($1, $2, $3, $4, $5, $6)`
+	(product_id, name, cost, quantity, user_id, date_created, date_updated)
+	VALUES($1, $2, $3, $4, $5, $6, $7)`
 
-	if _, err := db.ExecContext(ctx, q, p.ID, p.Name, p.Cost, p.Quantity, p.DateCreated, p.DateUpdated); err != nil {
+	if _, err := db.ExecContext(ctx, q, p.ID, p.Name, p.Cost, p.Quantity, p.UserID, p.DateCreated, p.DateUpdated); err != nil {
 		return nil, errors.Wrapf(err, "inserting products %v", np)
 	}
 
@@ -88,10 +91,17 @@ func Create(ctx context.Context, db *sqlx.DB, np NewProduct, now time.Time) (*Pr
 
 // Update modifies data about a Product. It will error if the specified ID is
 // invalid or does not reference an existing product.
-func Update(ctx context.Context, db *sqlx.DB, id string, update UpdateProduct, now time.Time) error {
+func Update(ctx context.Context, db *sqlx.DB, user auth.Claims, id string, update UpdateProduct, now time.Time) error {
 	p, err := Retrieve(ctx, db, id)
 	if err != nil {
 		return err
+	}
+
+	// If you do not have the admin role...
+	// and you are not the owner of this product...
+	// then get outta here!
+	if !user.HasRole(auth.RoleAdmin) && p.UserID != user.Subject {
+		return ErrForbidden
 	}
 
 	if update.Name != nil {

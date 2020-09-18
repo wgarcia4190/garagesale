@@ -14,12 +14,16 @@ import (
 	"syscall"
 	"time"
 
+	"contrib.go.opencensus.io/exporter/zipkin"
 	"github.com/dgrijalva/jwt-go"
+	openzipkin "github.com/openzipkin/zipkin-go"
+	zipkinHTTP "github.com/openzipkin/zipkin-go/reporter/http"
 	"github.com/pkg/errors"
 	"github.com/wgarcia4190/garagesale/cmd/sales-api/internal/handlers"
 	"github.com/wgarcia4190/garagesale/internal/platform/auth"
 	"github.com/wgarcia4190/garagesale/internal/platform/conf"
 	"github.com/wgarcia4190/garagesale/internal/platform/database"
+	"go.opencensus.io/trace"
 )
 
 func main() {
@@ -54,6 +58,11 @@ func run() error {
 			PrivateKeyFile string `conf:"default:private.pem"`
 			Algorithm      string `conf:"default:RS256"`
 		}
+		Trace struct {
+			URL         string  `conf:"default:http://localhost:9411/api/v2/spans"`
+			Service     string  `conf:"default:sales-api"`
+			Probability float64 `conf:"default:1"`
+		}
 	}
 
 	if err := conf.Parse(os.Args[1:], "SALES", &cfg); err != nil {
@@ -81,7 +90,7 @@ func run() error {
 
 	// =========================================================================
 	// Initialize authentication support
-	authenticator, err := createAuth(cfg.Auth.PrivateKeyFile, cfg.Auth.KeyID, cfg.Auth.Algorithm)
+	authenticator, _ := createAuth(cfg.Auth.PrivateKeyFile, cfg.Auth.KeyID, cfg.Auth.Algorithm)
 
 	// =========================================================================
 	// Start Database
@@ -99,6 +108,14 @@ func run() error {
 	defer db.Close()
 
 	// =========================================================================
+	// Start Tracing Support
+	closer, err := registerTracer(cfg.Trace.Service, cfg.Web.Address, cfg.Trace.URL, cfg.Trace.Probability)
+	if err != nil {
+		return err
+	}
+	defer closer()
+
+	// =========================================================================
 	// Start Debug Service
 	go func() {
 		log.Printf("main : Debug service listening on %s", cfg.Web.Debug)
@@ -111,9 +128,14 @@ func run() error {
 
 	// =========================================================================
 	// Start API Service
+	// Make a channel to listen for an interrupt or terminate signal from the OS.
+	// Use a buffered channel because the signal package requires it.
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
+
 	api := http.Server{
 		Addr:         cfg.Web.Address,
-		Handler:      handlers.API(log, db, authenticator),
+		Handler:      handlers.API(shutdown, log, db, authenticator),
 		ReadTimeout:  cfg.Web.ReadTimeout,
 		WriteTimeout: cfg.Web.WriteTimeout,
 	}
@@ -128,10 +150,6 @@ func run() error {
 		serverError <- api.ListenAndServe()
 	}()
 
-	// Make a channel to listen for an interrupt or terminate signal from the OS.
-	// Use a buffered channel because the signal package requires it.
-	shutdown := make(chan os.Signal, 1)
-	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
 
 	// =========================================================================
 	// Shutdown
@@ -141,8 +159,8 @@ func run() error {
 	case err := <-serverError:
 		return errors.Wrap(err, "Listening and serving")
 
-	case <-shutdown:
-		log.Println("main: Start shutdown")
+	case sig := <-shutdown:
+		log.Println("main: Start shutdown", sig)
 
 		// Give outstanding requests a deadline for completion.
 		timeout := cfg.Web.ShutdownTimeout
@@ -160,6 +178,10 @@ func run() error {
 
 		if err != nil {
 			return errors.Wrap(err, "graceful shutdown")
+		}
+
+		if sig == syscall.SIGSTOP {
+			return errors.New("Integrity error detected, asking for self shutdown")
 		}
 	}
 
@@ -180,4 +202,20 @@ func createAuth(privateKeyFile, keyID, algorithm string) (*auth.Authenticator, e
 	public := auth.NewSimpleKeyLookupFunc(keyID, key.Public().(*rsa.PublicKey))
 
 	return auth.NewAuthenticator(key, keyID, algorithm, public)
+}
+
+func registerTracer(service, httpAddr, traceURL string, probability float64) (func() error, error) {
+	localEndpoint, err := openzipkin.NewEndpoint(service, httpAddr)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating the local zipkinEndpoint")
+	}
+
+	reporter := zipkinHTTP.NewReporter(traceURL)
+
+	trace.RegisterExporter(zipkin.NewExporter(reporter, localEndpoint))
+	trace.ApplyConfig(trace.Config{
+		DefaultSampler: trace.ProbabilitySampler(probability),
+	})
+
+	return reporter.Close, nil
 }

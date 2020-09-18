@@ -2,6 +2,7 @@ package product_test
 
 import (
 	"context"
+	"github.com/wgarcia4190/garagesale/internal/platform/auth"
 	"github.com/wgarcia4190/garagesale/internal/schema"
 	"testing"
 	"time"
@@ -25,7 +26,13 @@ func TestProducts(t *testing.T) {
 
 	now := time.Date(2020, time.September, 1, 0, 0, 0, 0, time.UTC)
 
-	p, err := product.Create(ctx, db, np, now)
+	claims := auth.NewClaims(
+		"718ffbea-f4a1-4667-8ae3-b349da52675e", // This is just some random UUID.
+		[]string{auth.RoleAdmin, auth.RoleUser},
+		now, time.Hour,
+	)
+
+	p, err := product.Create(ctx, db, claims, np, now)
 	if err != nil {
 		t.Fatalf("could not create product: %v", err)
 	}

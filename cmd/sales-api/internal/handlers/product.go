@@ -2,15 +2,17 @@ package handlers
 
 import (
 	"context"
-	"github.com/pkg/errors"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi"
 	"github.com/jmoiron/sqlx"
+	"github.com/pkg/errors"
+	"github.com/wgarcia4190/garagesale/internal/platform/auth"
 	"github.com/wgarcia4190/garagesale/internal/platform/web"
 	"github.com/wgarcia4190/garagesale/internal/product"
+	"go.opencensus.io/trace"
 )
 
 // Product has handler methods for dealing with Products.
@@ -21,6 +23,9 @@ type Product struct {
 
 // GetListProducts gives all products as list.
 func (p *Product) GetListProducts(ctx context.Context, writer http.ResponseWriter, request *http.Request) error {
+	ctx, span := trace.StartSpan(ctx, "handlers.Product.List")
+	defer span.End()
+
 	list, err := product.List(ctx, p.DB)
 
 	if err != nil {
@@ -51,12 +56,18 @@ func (p *Product) RetrieveProduct(ctx context.Context, writer http.ResponseWrite
 
 // CreateProduct decode a JSON document from a POST request and create a new Product.
 func (p *Product) CreateProduct(ctx context.Context, writer http.ResponseWriter, request *http.Request) error {
+
+	claims, ok := ctx.Value(auth.Key).(auth.Claims)
+	if !ok {
+		return web.NewShutdownError("auth claims not in context")
+	}
+
 	var np product.NewProduct
 	if err := web.Decode(request, &np); err != nil {
 		return err
 	}
 
-	prod, err := product.Create(ctx, p.DB, np, time.Now())
+	prod, err := product.Create(ctx, p.DB, claims, np, time.Now())
 	if err != nil {
 		return err
 	}
@@ -69,17 +80,24 @@ func (p *Product) CreateProduct(ctx context.Context, writer http.ResponseWriter,
 func (p *Product) UpdateProduct(ctx context.Context, writer http.ResponseWriter, request *http.Request) error {
 	id := chi.URLParam(request, "id")
 
+	claims, ok := ctx.Value(auth.Key).(auth.Claims)
+	if !ok {
+		return errors.New("auth claims not in context")
+	}
+
 	var update product.UpdateProduct
 	if err := web.Decode(request, &update); err != nil {
 		return errors.Wrap(err, "decoding product update")
 	}
 
-	if err := product.Update(ctx, p.DB, id, update, time.Now()); err != nil {
+	if err := product.Update(ctx, p.DB, claims, id, update, time.Now()); err != nil {
 		switch err {
 		case product.ErrNotFound:
 			return web.NewRequestError(err, http.StatusNotFound)
 		case product.ErrInvalidID:
 			return web.NewRequestError(err, http.StatusBadRequest)
+		case product.ErrForbidden:
+			return web.NewRequestError(err, http.StatusForbidden)
 		default:
 			return errors.Wrapf(err, "updating product %q", id)
 		}
